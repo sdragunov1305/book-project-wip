@@ -2,7 +2,9 @@ extends Node
 
 
 const SAVE_PATH := "user://save.json"
-const MANIFEST_PATH := "res://data/book_manifest.json"
+const BOOK_SOURCE_PATH := "res://config/book_source.json"
+## If JSON path is broken or missing, we still try this (UTF-8 in source file).
+const _EPUB_DOWNLOADS_FALLBACK := "C:/Users/fr0bi/Downloads/Telegram Desktop/Виктор_Пелевин_Непобедимое_солнце_Книга_1.epub"
 
 var manifest: Dictionary = {}
 var chapter_lengths: Dictionary = {} ## chapter_id -> int
@@ -18,24 +20,84 @@ signal achievements_changed
 
 
 func _ready() -> void:
-	_load_manifest()
+	_load_manifest_with_epub_priority()
 	_compute_chapter_lengths()
 	load_game()
 	_check_achievements()
 
 
-func _load_manifest() -> void:
-	var f := FileAccess.open(MANIFEST_PATH, FileAccess.READ)
+func _load_manifest_with_epub_priority() -> void:
+	for epub_path in _epub_paths_to_try():
+		if epub_path.is_empty():
+			continue
+		if not FileAccess.file_exists(epub_path):
+			continue
+		var loaded := EpubLoader.load_epub(epub_path)
+		if bool(loaded.get("ok", false)):
+			var m = loaded.get("manifest", null)
+			if m is Dictionary:
+				manifest = m
+				return
+		push_warning("EPUB failed for '%s': %s" % [epub_path, str(loaded.get("error", "?"))])
+	_load_placeholder_manifest()
+
+
+func _epub_paths_to_try() -> Array[String]:
+	var out: Array[String] = []
+	var seen := {}
+	var p1 := _read_epub_path_from_config()
+	if not p1.is_empty() and not seen.has(p1):
+		out.append(p1)
+		seen[p1] = true
+	var p2 := "res://books/main.epub"
+	if not seen.has(p2):
+		out.append(p2)
+		seen[p2] = true
+	var p3 := _EPUB_DOWNLOADS_FALLBACK.replace("\\", "/")
+	if not seen.has(p3):
+		out.append(p3)
+		seen[p3] = true
+	return out
+
+
+func _read_epub_path_from_config() -> String:
+	if not FileAccess.file_exists(BOOK_SOURCE_PATH):
+		return ""
+	var f := FileAccess.open(BOOK_SOURCE_PATH, FileAccess.READ)
 	if f == null:
-		push_error("Missing book manifest at %s" % MANIFEST_PATH)
-		return
-	var txt := f.get_as_text()
+		return ""
+	var d = JSON.parse_string(f.get_as_text())
 	f.close()
-	var data = JSON.parse_string(txt)
-	if data is Dictionary:
-		manifest = data
-	else:
-		push_error("Invalid manifest JSON")
+	if d is Dictionary:
+		return str(d.get("epub_path", "")).strip_edges()
+	return ""
+
+
+func _load_placeholder_manifest() -> void:
+	var msg := (
+		"Could not load any EPUB.\n\n"
+		+ "1) Copy your book to the project folder books/ and rename it to: main.epub\n"
+		+ "   (path res://books/main.epub)\n\n"
+		+ "2) Or set \"epub_path\" in res://config/book_source.json to the full path of your .epub\n"
+		+ "   Save that file as UTF-8 if the path contains non-English letters.\n\n"
+		+ "3) The game also tries your Downloads copy if it exists at the path built into game_state.gd.\n"
+	)
+	manifest = {
+		"book_id": "no_epub",
+		"title": "Book not loaded",
+		"chapters":
+		[
+			{
+				"chapter_id": "howto",
+				"title": "How to load your book",
+				"path": "",
+				"text": msg,
+				"text_version": 1,
+				"hp_reward": 0,
+			}
+		],
+	}
+	push_error("No EPUB loaded. See on-screen instructions.")
 
 
 func _compute_chapter_lengths() -> void:
@@ -44,9 +106,14 @@ func _compute_chapter_lengths() -> void:
 		return
 	for ch in manifest.get("chapters", []):
 		if ch is Dictionary:
-			var path: String = ch.get("path", "")
 			var cid: String = ch.get("chapter_id", "")
-			if path.is_empty() or cid.is_empty():
+			if cid.is_empty():
+				continue
+			if ch.has("text"):
+				chapter_lengths[cid] = str(ch["text"]).length()
+				continue
+			var path: String = ch.get("path", "")
+			if path.is_empty():
 				continue
 			var cf := FileAccess.open(path, FileAccess.READ)
 			if cf:
@@ -73,6 +140,31 @@ func get_chapter_meta(chapter_id: String) -> Dictionary:
 		if ch is Dictionary and str(ch.get("chapter_id", "")) == chapter_id:
 			return ch
 	return {}
+
+
+func get_chapter_plain_text(chapter_id: String) -> String:
+	var meta := get_chapter_meta(chapter_id)
+	if meta.has("text"):
+		return str(meta["text"])
+	var p := str(meta.get("path", ""))
+	if p.is_empty():
+		return ""
+	var f := FileAccess.open(p, FileAccess.READ)
+	if f == null:
+		return ""
+	var t := f.get_as_text()
+	f.close()
+	return t
+
+
+func get_first_chapter_id() -> String:
+	var chs := get_chapters()
+	if chs.is_empty():
+		return ""
+	var c0 = chs[0]
+	if c0 is Dictionary:
+		return str(c0.get("chapter_id", ""))
+	return ""
 
 
 func get_total_chars() -> int:
@@ -132,7 +224,8 @@ func unlock_achievement(id: String) -> void:
 
 
 func _check_achievements() -> void:
-	if bool(chapters_completed.get("ch1", false)):
+	var first_id := get_first_chapter_id()
+	if not first_id.is_empty() and bool(chapters_completed.get(first_id, false)):
 		unlock_achievement("first_chapter")
 	if total_hp >= 20:
 		unlock_achievement("hp_20")

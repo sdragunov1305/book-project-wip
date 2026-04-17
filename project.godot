@@ -11,5 +11,11 @@ config_version=5
 [application]
 
 config/name="Book Project"
+run/main_scene="res://scenes/reader.tscn"
 config/features=PackedStringArray("4.5", "Forward Plus")
 config/icon="res://icon.svg"
+
+[autoload]
+
+GameState="*res://autoload/game_state.gd"
+Net="*res://scripts/net/supabase_client.gd"

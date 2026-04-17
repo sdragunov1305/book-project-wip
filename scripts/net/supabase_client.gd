@@ -10,7 +10,6 @@ var anon_key: String = ""
 var access_token: String = ""
 
 var _http: HTTPRequest
-var _pending: Dictionary = {} ## int -> Callable
 
 signal session_changed
 
@@ -88,8 +87,7 @@ func sign_in_email(email: String, password: String) -> Dictionary:
 	var err := _http.request(url, headers, HTTPClient.METHOD_POST, body)
 	if err != OK:
 		return {"ok": false, "error": "request_failed"}
-	var out := await _wait_request(err)
-	return out
+	return await _wait_request()
 
 
 func sign_up_email(email: String, password: String) -> Dictionary:
@@ -101,7 +99,7 @@ func sign_up_email(email: String, password: String) -> Dictionary:
 	var err := _http.request(url, headers, HTTPClient.METHOD_POST, body)
 	if err != OK:
 		return {"ok": false, "error": "request_failed"}
-	return await _wait_request(err)
+	return await _wait_request()
 
 
 func fetch_comments(book_id: String, chapter_id: String, text_version: int) -> Dictionary:
@@ -119,7 +117,7 @@ func fetch_comments(book_id: String, chapter_id: String, text_version: int) -> D
 	var err := _http.request(url, headers, HTTPClient.METHOD_GET)
 	if err != OK:
 		return {"ok": false, "error": "request_failed", "data": []}
-	return await _wait_request(err)
+	return await _wait_request()
 
 
 func post_comment(
@@ -155,7 +153,7 @@ func post_comment(
 	var err := _http.request(url, headers, HTTPClient.METHOD_POST, JSON.stringify(row))
 	if err != OK:
 		return {"ok": false, "error": "request_failed"}
-	return await _wait_request(err)
+	return await _wait_request()
 
 
 func upsert_reading_progress(rows: Array) -> Dictionary:
@@ -173,11 +171,10 @@ func upsert_reading_progress(rows: Array) -> Dictionary:
 	var err := _http.request(url, headers, HTTPClient.METHOD_POST, JSON.stringify(rows))
 	if err != OK:
 		return {"ok": false, "error": "request_failed"}
-	return await _wait_request(err)
+	return await _wait_request()
 
 
-func _wait_request(rid: int) -> Dictionary:
-	_pending[rid] = true
+func _wait_request() -> Dictionary:
 	var args = await _http.request_completed ## result, code, headers, body
 	var result: int = args[0]
 	var code: int = args[1]
