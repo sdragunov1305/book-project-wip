@@ -27,6 +27,10 @@ const _FlowScript = preload("res://scripts/chapter_flow_overlay.gd")
 var _chapter_id: String = ""
 var _reply_parent_id: Variant = null
 var _pending_flow_chapter_id: String = ""
+## chapter_id -> true: auto quiz overlay already shown for this chapter (until completed / debug reset).
+var _auto_chapter_flow_shown: Dictionary = {}
+## For chapters that fit on one screen (no v-scroll), require at least one interaction before "read to end".
+var _chapter_reader_touched: bool = false
 var _picker_safe_idx: int = 0
 var _flow: CanvasLayer
 var _dlg_next: AcceptDialog
@@ -46,6 +50,7 @@ func _ready() -> void:
 		_picker_safe_idx = 0
 		_on_picker(0)
 	_text.get_v_scroll_bar().value_changed.connect(_on_scroll)
+	_text.gui_input.connect(_on_reader_text_gui_input)
 	_btn_complete.pressed.connect(_on_complete_pressed)
 	_btn_post.pressed.connect(_on_post_pressed)
 	_btn_refresh.pressed.connect(_reload_comments)
@@ -102,6 +107,7 @@ func _on_picker(idx: int) -> void:
 		return
 	_picker_safe_idx = idx
 	_chapter_id = str(_picker.get_item_metadata(idx))
+	_chapter_reader_touched = false
 	var meta := GameState.get_chapter_meta(_chapter_id)
 	_chapter_title.text = str(meta.get("title", ""))
 	var bl := str(meta.get("blurb", ""))
@@ -127,8 +133,29 @@ func _sync_scroll_progress() -> void:
 func _on_scroll(_v: float) -> void:
 	if _chapter_id.is_empty():
 		return
-	GameState.set_chapter_read_ratio(_chapter_id, _scroll_ratio())
+	var r_raw: float = _scroll_ratio()
+	var at_end := _reader_at_chapter_end_for_flow()
+	var r_store: float = 1.0 if at_end else minf(r_raw, 0.999)
+	GameState.set_chapter_read_ratio(_chapter_id, r_store, at_end)
+	_maybe_auto_show_chapter_flow_at_end(at_end)
 	_refresh_bars()
+
+
+func _on_reader_text_gui_input(event: InputEvent) -> void:
+	if _chapter_id.is_empty():
+		return
+	var mark := false
+	if event is InputEventMouseButton:
+		mark = true
+	elif event is InputEventKey and event.pressed and not event.echo:
+		mark = true
+	elif event is InputEventScreenTouch and event.pressed:
+		mark = true
+	if not mark:
+		return
+	if not _chapter_reader_touched:
+		_chapter_reader_touched = true
+		call_deferred("_on_scroll", 0.0)
 
 
 func _scroll_ratio() -> float:
@@ -137,6 +164,39 @@ func _scroll_ratio() -> float:
 	if mx <= 0.0:
 		return 1.0
 	return clampf(sb.value / mx, 0.0, 1.0)
+
+
+## True only when the vertical scrollbar is at the real bottom (not "high %" earlier in the chapter).
+func _scroll_geometry_at_bottom() -> bool:
+	var sb := _text.get_v_scroll_bar()
+	var mx := sb.max_value
+	if mx <= 0.0:
+		return false
+	var pg: float = float(sb.page)
+	var eps: float = maxf(2.0, pg * 0.03)
+	return sb.value >= mx - eps
+
+
+func _reader_at_chapter_end_for_flow() -> bool:
+	var mx := _text.get_v_scroll_bar().max_value
+	if mx <= 0.0:
+		return _chapter_reader_touched
+	return _scroll_geometry_at_bottom()
+
+
+func _maybe_auto_show_chapter_flow_at_end(at_end: bool) -> void:
+	if _flow.visible:
+		return
+	if not at_end:
+		return
+	if not GameState.is_eligible_for_completion_flow(_chapter_id):
+		return
+	if bool(_auto_chapter_flow_shown.get(_chapter_id, false)):
+		return
+	_auto_chapter_flow_shown[_chapter_id] = true
+	_pending_flow_chapter_id = _chapter_id
+	var meta := GameState.get_chapter_meta(_chapter_id)
+	_flow.show_after_chapter(str(meta.get("title", "")))
 
 
 func _refresh_bars() -> void:
@@ -157,6 +217,7 @@ func _update_complete_button() -> void:
 
 
 func _on_debug_reset_reading() -> void:
+	_auto_chapter_flow_shown.clear()
 	GameState.debug_reset_reading_progress()
 	_fill_picker()
 	_refresh_picker_lock()
@@ -182,8 +243,9 @@ func _on_complete_pressed() -> void:
 		elif GameState.get_chapter_index(_chapter_id) != GameState.linear_unlock_index:
 			_status.text = "Complete the current chapter in order first."
 		else:
-			_status.text = "Scroll ~85% of the chapter first."
+			_status.text = "Scroll to the very bottom of the chapter (100% on the bar) first."
 		return
+	_auto_chapter_flow_shown[_chapter_id] = true
 	_pending_flow_chapter_id = _chapter_id
 	var meta := GameState.get_chapter_meta(_chapter_id)
 	_flow.show_after_chapter(str(meta.get("title", "")))

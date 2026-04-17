@@ -11,6 +11,8 @@ var manifest: Dictionary = {}
 var chapter_lengths: Dictionary = {} ## chapter_id -> int
 
 var chapter_read_ratio: Dictionary = {} ## chapter_id -> float 0..1
+## Runtime only (cleared on load): scrollbar is physically at chapter end (reader updates each scroll).
+var chapter_at_scroll_end: Dictionary = {} ## chapter_id -> bool
 var chapters_completed: Dictionary = {} ## chapter_id -> bool
 var total_hp: int = 0
 var comments_posted_count: int = 0
@@ -215,7 +217,7 @@ func get_next_chapter_title_after(chapter_id: String) -> String:
 func is_eligible_for_completion_flow(chapter_id: String) -> bool:
 	if bool(chapters_completed.get(chapter_id, false)):
 		return false
-	if float(chapter_read_ratio.get(chapter_id, 0.0)) < 0.85:
+	if not bool(chapter_at_scroll_end.get(chapter_id, false)):
 		return false
 	var idx := get_chapter_index(chapter_id)
 	if idx < 0:
@@ -260,8 +262,9 @@ func get_weighted_book_ratio() -> float:
 	return clampf(acc / float(total), 0.0, 1.0)
 
 
-func set_chapter_read_ratio(chapter_id: String, ratio: float) -> void:
+func set_chapter_read_ratio(chapter_id: String, ratio: float, at_scroll_end: bool = false) -> void:
 	chapter_read_ratio[chapter_id] = clampf(ratio, 0.0, 1.0)
+	chapter_at_scroll_end[chapter_id] = at_scroll_end
 	progress_changed.emit()
 	save_game()
 	_check_achievements()
@@ -293,6 +296,7 @@ func _check_achievements() -> void:
 
 func debug_reset_reading_progress() -> void:
 	chapter_read_ratio.clear()
+	chapter_at_scroll_end.clear()
 	chapters_completed.clear()
 	linear_unlock_index = 0
 	save_game()
@@ -339,6 +343,7 @@ func load_game() -> void:
 		else:
 			_migrate_linear_unlock_from_completed()
 		linear_unlock_index = clampi(linear_unlock_index, 0, maxi(get_chapters().size() - 1, 0))
+	chapter_at_scroll_end.clear()
 
 
 func _migrate_linear_unlock_from_completed() -> void:
