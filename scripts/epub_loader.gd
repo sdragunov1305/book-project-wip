@@ -56,7 +56,7 @@ static func load_epub(epub_path: String) -> Dictionary:
 		if body_bytes.is_empty():
 			continue
 		var raw := body_bytes.get_string_from_utf8()
-		var plain := html_to_plain(raw)
+		var plain := html_to_book_plain(raw)
 		if plain.strip_edges().is_empty():
 			continue
 		var ch_title := guess_chapter_title(raw, spine_index + 1)
@@ -161,18 +161,107 @@ static func _parse_dc_title(opf: String) -> String:
 	return ""
 
 
-static func html_to_plain(html: String) -> String:
+static func html_to_book_plain(html: String) -> String:
 	var rx_body := RegEx.new()
 	rx_body.compile("<body[^>]*>([\\s\\S]*?)</body>", true)
 	var inner := html
 	var mb := rx_body.search(html)
 	if mb:
 		inner = mb.get_string(1)
-	inner = _rex_replace(inner, "<script[^>]*>[\\s\\S]*?</script>", true)
-	inner = _rex_replace(inner, "<style[^>]*>[\\s\\S]*?</style>", true)
-	inner = _rex_replace(inner, "<[^>]+>", true)
+	inner = _rex_replace(inner, "<script[^>]*>[\\s\\S]*?</script>", " ", true)
+	inner = _rex_replace(inner, "<style[^>]*>[\\s\\S]*?</style>", " ", true)
+	inner = _rex_replace(inner, "<svg[^>]*>[\\s\\S]*?</svg>", " ", true)
+	## Soft line breaks
+	inner = _rex_replace(inner, "<br[^>]*/?>", "\n", true)
+	## Typical paragraph opens (before we strip remaining tags)
+	inner = _rex_replace(inner, "<p[^>]*>", "\n", true)
+	inner = _rex_replace(inner, "<div[^>]*>", "\n", true)
+	inner = _rex_replace(inner, "<section[^>]*>", "\n", true)
+	## Block boundaries → paragraph gaps
+	var rx_blk := RegEx.new()
+	rx_blk.compile("</(p|div|section|article|header|footer|blockquote|figure|h1|h2|h3|h4|h5|h6)[^>]*>", true)
+	inner = rx_blk.sub(inner, "\n\n", true)
+	## List lines
+	inner = _rex_replace(inner, "<li[^>]*>", "\n    • ", true)
+	inner = _rex_replace(inner, "</li>", "\n", true)
+	## Drop remaining tags (keep text)
+	inner = _rex_replace(inner, "<[^>]+>", " ", true)
+	inner = inner.replace("\r\n", "\n").replace("\r", "\n")
 	inner = unescape_basic(inner)
-	return collapse_whitespace(inner).strip_edges()
+	inner = unescape_numeric_entities(inner)
+	inner = normalize_inline_whitespace(inner)
+	inner = collapse_blank_lines(inner)
+	inner = indent_paragraph_blocks(inner)
+	return inner.strip_edges()
+
+
+## Collapse spaces/tabs inside each line; keep single newlines inside a block.
+static func normalize_inline_whitespace(s: String) -> String:
+	var lines := s.split("\n")
+	var out: PackedStringArray = PackedStringArray()
+	var rxsp := RegEx.new()
+	rxsp.compile("[ \\t]+")
+	for line in lines:
+		var L := rxsp.sub(str(line), " ", true).strip_edges()
+		out.append(L)
+	return "\n".join(out)
+
+
+## 3+ newlines → double (one blank line between paragraphs).
+static func collapse_blank_lines(s: String) -> String:
+	var rx := RegEx.new()
+	rx.compile("\n{3,}")
+	return rx.sub(s, "\n\n", true)
+
+
+## First line of each paragraph (split by blank line) gets a book indent.
+static func indent_paragraph_blocks(s: String) -> String:
+	var blocks := s.split("\n\n", false)
+	var out: PackedStringArray = PackedStringArray()
+	for block in blocks:
+		var b := str(block).strip_edges()
+		if b.is_empty():
+			continue
+		var lines := b.split("\n")
+		var cleaned: PackedStringArray = PackedStringArray()
+		for line in lines:
+			var L := str(line).strip_edges()
+			if not L.is_empty():
+				cleaned.append(L)
+		if cleaned.is_empty():
+			continue
+		var first: String = str(cleaned[0])
+		if cleaned.size() == 1:
+			out.append("\t" + first)
+		else:
+			var tail: PackedStringArray = PackedStringArray()
+			for k in range(1, cleaned.size()):
+				tail.append(str(cleaned[k]))
+			out.append("\t" + first + "\n" + "\n".join(tail))
+	return "\n\n".join(out)
+
+
+static func unescape_numeric_entities(s: String) -> String:
+	var rx := RegEx.new()
+	rx.compile("&#(x?[0-9A-Fa-f]+);")
+	var out := s
+	var safety := 0
+	while safety < 5000:
+		safety += 1
+		var m := rx.search(out)
+		if not m:
+			break
+		var cap := m.get_string(1)
+		var code := 0
+		if cap.begins_with("x") or cap.begins_with("X"):
+			code = cap.substr(1).hex_to_int()
+		else:
+			code = int(cap)
+		var ch := ""
+		if code > 0 and code <= 0x10FFFF:
+			ch = String.chr(code)
+		out = out.substr(0, m.get_start()) + ch + out.substr(m.get_end())
+	return out
 
 
 static func guess_chapter_title(html: String, fallback_num: int) -> String:
@@ -181,7 +270,7 @@ static func guess_chapter_title(html: String, fallback_num: int) -> String:
 		rx.compile(pat, true)
 		var m := rx.search(html)
 		if m:
-			var t := _rex_replace(m.get_string(1), "<[^>]+>", true)
+			var t := _rex_replace(m.get_string(1), "<[^>]+>", " ", true)
 			t = unescape_basic(collapse_whitespace(t)).strip_edges()
 			if not t.is_empty() and t.length() < 200:
 				return t
@@ -219,10 +308,10 @@ static func slugify(s: String) -> String:
 	return "_".join(parts)
 
 
-static func _rex_replace(s: String, pattern: String, ci: bool) -> String:
+static func _rex_replace(s: String, pattern: String, repl: String, ci: bool) -> String:
 	var rx := RegEx.new()
 	rx.compile(pattern, ci)
-	return rx.sub(s, " ", true)
+	return rx.sub(s, repl, true)
 
 
 static func unescape_basic(s: String) -> String:
@@ -233,6 +322,12 @@ static func unescape_basic(s: String) -> String:
 		.replace("&gt;", ">")
 		.replace("&quot;", "\"")
 		.replace("&#39;", "'")
+		.replace("&laquo;", "\u00ab")
+		.replace("&raquo;", "\u00bb")
+		.replace("&mdash;", "\u2014")
+		.replace("&ndash;", "\u2013")
+		.replace("&hellip;", "\u2026")
+		.replace("&apos;", "'")
 	)
 
 

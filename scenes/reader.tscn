@@ -38,7 +38,16 @@ layout_mode = 2
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="TextEdit" type="TextEdit" parent="Margin/VBox/HSplit"]
+[node name="TextFrame" type="MarginContainer" parent="Margin/VBox/HSplit"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/margin_left = 40
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 36
+theme_override_constants/margin_bottom = 28
+
+[node name="TextEdit" type="TextEdit" parent="Margin/VBox/HSplit/TextFrame"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
@@ -54,6 +63,12 @@ size_flags_vertical = 3
 layout_mode = 2
 autowrap_mode = 3
 text = "?????"
+
+[node name="ChapterBlurb" type="Label" parent="Margin/VBox/HSplit/Right"]
+layout_mode = 2
+autowrap_mode = 3
+theme_override_colors/font_color = Color(0.35, 0.32, 0.3, 1)
+theme_override_font_sizes/font_size = 13
 
 [node name="ChapterProgress" type="ProgressBar" parent="Margin/VBox/HSplit/Right"]
 layout_mode = 2
@@ -115,6 +130,13 @@ text = "?????:"
 [node name="ChapterPicker" type="OptionButton" parent="Margin/VBox/BottomRow"]
 layout_mode = 2
 size_flags_horizontal = 3
+
+[node name="DebugRow" type="HBoxContainer" parent="Margin/VBox"]
+layout_mode = 2
+
+[node name="BtnDebugResetReading" type="Button" parent="Margin/VBox/DebugRow"]
+layout_mode = 2
+text = "Debug: reset reading progress"
 
 [node name="AchievementsLabel" type="Label" parent="Margin/VBox"]
 layout_mode = 2
