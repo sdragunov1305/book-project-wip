@@ -1,0 +1,27 @@
+{
+	"book_id": "sample_book",
+	"title": "??????? ?????",
+	"chapters": [
+		{
+			"chapter_id": "ch1",
+			"title": "????? 1. ??????",
+			"path": "res://books/sample/chapter_01.txt",
+			"text_version": 1,
+			"hp_reward": 10
+		},
+		{
+			"chapter_id": "ch2",
+			"title": "????? 2. ????",
+			"path": "res://books/sample/chapter_02.txt",
+			"text_version": 1,
+			"hp_reward": 15
+		},
+		{
+			"chapter_id": "ch3",
+			"title": "????? 3. ?????",
+			"path": "res://books/sample/chapter_03.txt",
+			"text_version": 1,
+			"hp_reward": 20
+		}
+	]
+}
