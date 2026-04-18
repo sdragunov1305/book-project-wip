@@ -4,8 +4,6 @@ extends Node
 const SAVE_PATH := "user://save.json"
 const BOOK_SOURCE_PATH := "res://config/book_source.json"
 const ARC_PARTS_PATH := "res://config/book_arc_parts.json"
-## If JSON path is broken or missing, we still try this (UTF-8 in source file).
-const _EPUB_DOWNLOADS_FALLBACK := "C:/Users/fr0bi/Downloads/Telegram Desktop/Виктор_Пелевин_Непобедимое_солнце_Книга_1.epub"
 
 var manifest: Dictionary = {}
 var chapter_lengths: Dictionary = {} ## chapter_id -> int
@@ -59,10 +57,6 @@ func _epub_paths_to_try() -> Array[String]:
 	if not seen.has(p2):
 		out.append(p2)
 		seen[p2] = true
-	var p3 := _EPUB_DOWNLOADS_FALLBACK.replace("\\", "/")
-	if not seen.has(p3):
-		out.append(p3)
-		seen[p3] = true
 	return out
 
 
@@ -101,9 +95,8 @@ func _load_placeholder_manifest() -> void:
 		"Could not load any EPUB.\n\n"
 		+ "1) Copy your book to the project folder books/ and rename it to: main.epub\n"
 		+ "   (path res://books/main.epub)\n\n"
-		+ "2) Or set \"epub_path\" in res://config/book_source.json to the full path of your .epub\n"
-		+ "   Save that file as UTF-8 if the path contains non-English letters.\n\n"
-		+ "3) The game also tries your Downloads copy if it exists at the path built into game_state.gd.\n"
+		+ "2) Or set \"epub_path\" in res://config/book_source.json to another res:// path or absolute path to your .epub\n"
+		+ "   Save that file as UTF-8 if the path contains non-English letters.\n"
 	)
 	manifest = {
 		"book_id": "no_epub",
