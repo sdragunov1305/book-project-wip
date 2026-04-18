@@ -4,6 +4,9 @@ extends Node
 const SAVE_PATH := "user://save.json"
 const BOOK_SOURCE_PATH := "res://config/book_source.json"
 const ARC_PARTS_PATH := "res://config/book_arc_parts.json"
+## Optional: set a machine-local default EPUB path here (UTF-8), or leave empty and use book_source.json only.
+const _EPUB_DOWNLOADS_FALLBACK := ""
+const SAMPLE_MANIFEST_PATH := "res://data/book_manifest.json"
 
 var manifest: Dictionary = {}
 var chapter_lengths: Dictionary = {} ## chapter_id -> int
@@ -24,9 +27,65 @@ signal achievements_changed
 
 func _ready() -> void:
 	_load_manifest_with_epub_priority()
+	_ensure_readable_book_or_sample()
 	_compute_chapter_lengths()
 	load_game()
 	_check_achievements()
+
+
+func _manifest_has_chapter_list() -> bool:
+	var chs: Variant = manifest.get("chapters", [])
+	return chs is Array and not (chs as Array).is_empty()
+
+
+func _count_readable_chars_in_current_manifest() -> int:
+	if manifest.is_empty():
+		return 0
+	var chs: Variant = manifest.get("chapters", [])
+	if not chs is Array:
+		return 0
+	var sum := 0
+	for ch in chs as Array:
+		if ch is Dictionary:
+			sum += str(ch.get("text", "")).length()
+			var p := str(ch.get("path", ""))
+			if not p.is_empty() and FileAccess.file_exists(p):
+				var f := FileAccess.open(p, FileAccess.READ)
+				if f:
+					sum += f.get_as_text().length()
+					f.close()
+	return sum
+
+
+func _ensure_readable_book_or_sample() -> void:
+	if not _manifest_has_chapter_list():
+		push_warning("Manifest has no chapters; loading sample book.")
+		_load_sample_manifest_fallback()
+		return
+	if _count_readable_chars_in_current_manifest() < 80:
+		push_warning("Manifest text is almost empty (broken EPUB/encoding); loading sample book.")
+		_load_sample_manifest_fallback()
+
+
+func _load_sample_manifest_fallback() -> void:
+	if not FileAccess.file_exists(SAMPLE_MANIFEST_PATH):
+		_load_placeholder_manifest()
+		return
+	var f := FileAccess.open(SAMPLE_MANIFEST_PATH, FileAccess.READ)
+	if f == null:
+		_load_placeholder_manifest()
+		return
+	var parsed = JSON.parse_string(f.get_as_text())
+	f.close()
+	if not parsed is Dictionary:
+		_load_placeholder_manifest()
+		return
+	var d: Dictionary = parsed
+	if not d.has("chapters"):
+		_load_placeholder_manifest()
+		return
+	manifest = d
+	push_warning("Using sample book from data/book_manifest.json (EPUB missing, unreadable, or produced empty text).")
 
 
 func _load_manifest_with_epub_priority() -> void:
@@ -39,11 +98,20 @@ func _load_manifest_with_epub_priority() -> void:
 		if bool(loaded.get("ok", false)):
 			var m = loaded.get("manifest", null)
 			if m is Dictionary:
-				manifest = m
-				_maybe_merge_story_arcs()
-				return
-		push_warning("EPUB failed for '%s': %s" % [epub_path, str(loaded.get("error", "?"))])
-	_load_placeholder_manifest()
+				var ch0: Variant = m.get("chapters", [])
+				if ch0 is Array and not (ch0 as Array).is_empty():
+					manifest = m
+					_maybe_merge_story_arcs()
+					return
+				push_warning("EPUB ok but manifest has no chapters: %s" % epub_path)
+			else:
+				push_warning("EPUB ok but manifest is not a Dictionary: %s" % epub_path)
+		else:
+			push_warning("EPUB failed for '%s': %s" % [epub_path, str(loaded.get("error", "?"))])
+	# No EPUB: try bundled sample chapters so the picker is not empty (main.epub is usually gitignored).
+	_load_sample_manifest_fallback()
+	if not _manifest_has_chapter_list():
+		_load_placeholder_manifest()
 
 
 func _epub_paths_to_try() -> Array[String]:
@@ -57,6 +125,10 @@ func _epub_paths_to_try() -> Array[String]:
 	if not seen.has(p2):
 		out.append(p2)
 		seen[p2] = true
+	var p3 := _EPUB_DOWNLOADS_FALLBACK.replace("\\", "/")
+	if not seen.has(p3):
+		out.append(p3)
+		seen[p3] = true
 	return out
 
 
@@ -87,6 +159,13 @@ func _maybe_merge_story_arcs() -> void:
 	var merged: Array = BookArcMerger.merge_into_three_parts(raw, parts, ver)
 	if merged.size() != 3:
 		return
+	var merged_chars := 0
+	for m in merged:
+		if m is Dictionary:
+			merged_chars += str(m.get("text", "")).length()
+	if merged_chars < 16:
+		push_warning("book_arc_parts: merged chapters look empty; keeping original spine chapters.")
+		return
 	manifest["chapters"] = merged
 
 
@@ -95,8 +174,9 @@ func _load_placeholder_manifest() -> void:
 		"Could not load any EPUB.\n\n"
 		+ "1) Copy your book to the project folder books/ and rename it to: main.epub\n"
 		+ "   (path res://books/main.epub)\n\n"
-		+ "2) Or set \"epub_path\" in res://config/book_source.json to another res:// path or absolute path to your .epub\n"
-		+ "   Save that file as UTF-8 if the path contains non-English letters.\n"
+		+ "2) Or set \"epub_path\" in res://config/book_source.json to the full path of your .epub\n"
+		+ "   Save that file as UTF-8 if the path contains non-English letters.\n\n"
+		+ "3) Or set _EPUB_DOWNLOADS_FALLBACK in game_state.gd for a personal default path (keep empty in git).\n"
 	)
 	manifest = {
 		"book_id": "no_epub",
@@ -147,8 +227,39 @@ func get_book_title() -> String:
 	return str(manifest.get("title", "Book"))
 
 
+func get_book_load_error_report() -> String:
+	var lines: Array = []
+	lines.append("Книга не загрузилась: в списке 0 глав.")
+	lines.append("book_id: %s" % get_book_id())
+	lines.append("title: %s" % get_book_title())
+	var epub_res := "res://books/main.epub"
+	lines.append("exists %s: %s" % [epub_res, str(FileAccess.file_exists(epub_res))])
+	if FileAccess.file_exists(BOOK_SOURCE_PATH):
+		var cf := FileAccess.open(BOOK_SOURCE_PATH, FileAccess.READ)
+		if cf:
+			lines.append("book_source.json: %s" % cf.get_as_text().strip_edges())
+			cf.close()
+	var chs := get_chapters()
+	lines.append("manifest chapters: %d" % chs.size())
+	var probe := EpubLoader.load_epub(epub_res)
+	lines.append(
+		"probe EPUB ok=%s err=%s" % [str(probe.get("ok", false)), str(probe.get("error", ""))]
+	)
+	if bool(probe.get("ok", false)):
+		var pm = probe.get("manifest", null)
+		if pm is Dictionary:
+			var pc: Array = pm.get("chapters", []) as Array
+			lines.append("probe chapter count: %d" % pc.size())
+	lines.append("")
+	lines.append("Если probe ок, а manifest пуст — удали user://save.json (сбой прогресса) и перезапусти.")
+	return "\n".join(lines)
+
+
 func get_chapters() -> Array:
-	return manifest.get("chapters", []) as Array
+	var v: Variant = manifest.get("chapters", [])
+	if v is Array:
+		return v
+	return []
 
 
 func get_chapter_meta(chapter_id: String) -> Dictionary:
@@ -299,6 +410,7 @@ func debug_reset_reading_progress() -> void:
 
 func save_game() -> void:
 	var data := {
+		"book_id": get_book_id(),
 		"chapter_read_ratio": chapter_read_ratio,
 		"chapters_completed": chapters_completed,
 		"total_hp": total_hp,
@@ -322,8 +434,22 @@ func load_game() -> void:
 	f.close()
 	if parsed is Dictionary:
 		var d: Dictionary = parsed
-		chapter_read_ratio = _dict_to_float_dict(d.get("chapter_read_ratio", {}))
-		chapters_completed = _dict_to_bool_dict(d.get("chapters_completed", {}))
+		var saved_bid := str(d.get("book_id", "")).strip_edges()
+		var cur_bid := get_book_id()
+		var reset_reading := not saved_bid.is_empty() and not cur_bid.is_empty() and saved_bid != cur_bid
+		if reset_reading:
+			push_warning("Save was for book '%s'; current book is '%s'. Reading progress reset." % [saved_bid, cur_bid])
+		if reset_reading:
+			chapter_read_ratio.clear()
+			chapters_completed.clear()
+			linear_unlock_index = 0
+		else:
+			chapter_read_ratio = _dict_to_float_dict(d.get("chapter_read_ratio", {}))
+			chapters_completed = _dict_to_bool_dict(d.get("chapters_completed", {}))
+			if d.has("linear_unlock_index"):
+				linear_unlock_index = int(d.get("linear_unlock_index", 0))
+			else:
+				_migrate_linear_unlock_from_completed()
 		total_hp = int(d.get("total_hp", 0))
 		comments_posted_count = int(d.get("comments_posted_count", 0))
 		var ach = d.get("achievements", [])
@@ -331,10 +457,6 @@ func load_game() -> void:
 			achievements.clear()
 			for a in ach:
 				achievements.append(str(a))
-		if d.has("linear_unlock_index"):
-			linear_unlock_index = int(d.get("linear_unlock_index", 0))
-		else:
-			_migrate_linear_unlock_from_completed()
 		linear_unlock_index = clampi(linear_unlock_index, 0, maxi(get_chapters().size() - 1, 0))
 	chapter_at_scroll_end.clear()
 

@@ -29,7 +29,7 @@ size_flags_vertical = 3
 
 [node name="TitleLabel" type="Label" parent="Margin/VBox"]
 layout_mode = 2
-text = "?????"
+text = "Book"
 
 [node name="BookProgress" type="ProgressBar" parent="Margin/VBox"]
 layout_mode = 2
@@ -51,18 +51,23 @@ theme_override_constants/margin_bottom = 28
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+focus_mode = 2
 editable = false
+selecting_enabled = true
+context_menu_enabled = true
+shortcut_keys_enabled = true
 wrap_mode = 1
 
 [node name="Right" type="VBoxContainer" parent="Margin/VBox/HSplit"]
-custom_minimum_size = Vector2(300, 0)
+custom_minimum_size = Vector2(360, 0)
 layout_mode = 2
 size_flags_vertical = 3
+theme_override_constants/separation = 8
 
 [node name="ChapterTitle" type="Label" parent="Margin/VBox/HSplit/Right"]
 layout_mode = 2
 autowrap_mode = 3
-text = "?????"
+text = "Chapter"
 
 [node name="ChapterBlurb" type="Label" parent="Margin/VBox/HSplit/Right"]
 layout_mode = 2
@@ -75,7 +80,13 @@ layout_mode = 2
 
 [node name="BtnComplete" type="Button" parent="Margin/VBox/HSplit/Right"]
 layout_mode = 2
-text = "????????? ????? (??)"
+text = "Complete chapter"
+
+[node name="CommentsHeader" type="Label" parent="Margin/VBox/HSplit/Right"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.25, 0.22, 0.2, 1)
+theme_override_font_sizes/font_size = 15
+text = "Comments"
 
 [node name="Scroll" type="ScrollContainer" parent="Margin/VBox/HSplit/Right"]
 layout_mode = 2
@@ -86,35 +97,41 @@ horizontal_scroll_mode = 0
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+theme_override_constants/separation = 10
 
-[node name="CommentInput" type="LineEdit" parent="Margin/VBox/HSplit/Right"]
+[node name="ReplyBanner" type="HBoxContainer" parent="Margin/VBox/HSplit/Right"]
+visible = false
 layout_mode = 2
-placeholder_text = "????? ???????????"
+
+[node name="ReplyToLabel" type="Label" parent="Margin/VBox/HSplit/Right/ReplyBanner"]
+layout_mode = 2
+size_flags_horizontal = 3
+autowrap_mode = 3
+theme_override_colors/font_color = Color(0.4, 0.35, 0.55, 1)
+theme_override_font_sizes/font_size = 12
+
+[node name="BtnCancelReply" type="Button" parent="Margin/VBox/HSplit/Right/ReplyBanner"]
+custom_minimum_size = Vector2(80, 28)
+layout_mode = 2
+text = "Cancel"
+
+[node name="CommentBody" type="TextEdit" parent="Margin/VBox/HSplit/Right"]
+custom_minimum_size = Vector2(0, 88)
+layout_mode = 2
+placeholder_text = "Note for selected quote..."
+wrap_mode = 1
 
 [node name="BtnPost" type="Button" parent="Margin/VBox/HSplit/Right"]
 layout_mode = 2
-text = "????????? ??????????? ? ?????????"
+text = "Add comment"
 
 [node name="BtnRefresh" type="Button" parent="Margin/VBox/HSplit/Right"]
 layout_mode = 2
-text = "???????? ???????????"
+text = "Refresh comments"
 
 [node name="BtnCloudSave" type="Button" parent="Margin/VBox/HSplit/Right"]
 layout_mode = 2
-text = "????????? ???????? ? ??????"
-
-[node name="Email" type="LineEdit" parent="Margin/VBox/HSplit/Right"]
-layout_mode = 2
-placeholder_text = "Email (Supabase)"
-
-[node name="Password" type="LineEdit" parent="Margin/VBox/HSplit/Right"]
-layout_mode = 2
-secret = true
-placeholder_text = "??????"
-
-[node name="BtnLogin" type="Button" parent="Margin/VBox/HSplit/Right"]
-layout_mode = 2
-text = "?????"
+text = "Sync progress to cloud"
 
 [node name="Status" type="Label" parent="Margin/VBox/HSplit/Right"]
 layout_mode = 2
@@ -125,7 +142,7 @@ layout_mode = 2
 
 [node name="LabelCh" type="Label" parent="Margin/VBox/BottomRow"]
 layout_mode = 2
-text = "?????:"
+text = "Chapter:"
 
 [node name="ChapterPicker" type="OptionButton" parent="Margin/VBox/BottomRow"]
 layout_mode = 2
@@ -141,4 +158,4 @@ text = "Debug: reset reading progress"
 [node name="AchievementsLabel" type="Label" parent="Margin/VBox"]
 layout_mode = 2
 autowrap_mode = 3
-text = "??????:"
+text = "Achievements:"
